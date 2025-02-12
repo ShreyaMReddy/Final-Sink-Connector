@@ -1,0 +1,45 @@
+FROM eclipse-temurin:17-jre
+
+# Install required packages
+RUN apt-get update -y && \
+    apt-get install -y wget && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Flink version
+ENV FLINK_VERSION=1.17.1
+ENV SCALA_VERSION=2.12
+ENV FLINK_HOME=/opt/flink
+
+# Download and extract Flink
+RUN wget -P /opt https://archive.apache.org/dist/flink/flink-${FLINK_VERSION}/flink-${FLINK_VERSION}-bin-scala_${SCALA_VERSION}.tgz && \
+    tar -xzf /opt/flink-${FLINK_VERSION}-bin-scala_${SCALA_VERSION}.tgz -C /opt/ && \
+    ln -s /opt/flink-${FLINK_VERSION} /opt/flink && \
+    rm /opt/flink-${FLINK_VERSION}-bin-scala_${SCALA_VERSION}.tgz
+
+# Set environment variables
+ENV PATH=$PATH:$FLINK_HOME/bin
+ENV JAVA_OPTS="--add-opens=java.base/sun.net.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED"
+
+# Configure Flink
+RUN echo "jobmanager.rpc.address: flink-jobmanager" >> /opt/flink/conf/flink-conf.yaml && \
+    echo "jobmanager.rpc.port: 6123" >> /opt/flink/conf/flink-conf.yaml && \
+    echo "jobmanager.bind-host: 0.0.0.0" >> /opt/flink/conf/flink-conf.yaml && \
+    echo "taskmanager.bind-host: 0.0.0.0" >> /opt/flink/conf/flink-conf.yaml && \
+    echo "taskmanager.host: 0.0.0.0" >> /opt/flink/conf/flink-conf.yaml && \
+    echo "rest.bind-address: 0.0.0.0" >> /opt/flink/conf/flink-conf.yaml && \
+    echo "rest.bind-port: 8081" >> /opt/flink/conf/flink-conf.yaml && \
+    echo "taskmanager.memory.process.size: 4096m" >> /opt/flink/conf/flink-conf.yaml && \
+    echo "taskmanager.numberOfTaskSlots: 4" >> /opt/flink/conf/flink-conf.yaml
+
+WORKDIR $FLINK_HOME
+
+RUN wget -P /opt/flink/lib https://repo.maven.apache.org/maven2/org/apache/flink/flink-connector-kafka/1.17.1/flink-connector-kafka-1.17.1.jar && \
+    wget -P /opt/flink/lib https://repo.maven.apache.org/maven2/org/apache/kafka/kafka-clients/3.2.3/kafka-clients-3.2.3.jar
+
+COPY target/kafka-flink-processor-1.0-SNAPSHOT.jar /opt/flink/lib/
+
+COPY docker-entrypoint.sh /
+RUN chmod +x /docker-entrypoint.sh
+
+ENTRYPOINT ["/docker-entrypoint.sh"]

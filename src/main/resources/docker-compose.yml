@@ -1,0 +1,162 @@
+version: "2.2"
+
+services:
+  flink-jobmanager:
+    build:
+      context: .
+      dockerfile: Dockerfile.flink
+    container_name: flink-jobmanager
+    hostname: flink-jobmanager
+    ports:
+      - "8081:8081"
+      - "6123:6123"
+      - "9249:9249"  # Prometheus metrics
+      - "8789:8789"  # JMX metrics
+    command: jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.memory.process.size: 1600m
+        metrics.reporters: prometheus,jmx
+        metrics.reporter.prometheus.class: org.apache.flink.metrics.prometheus.PrometheusReporter
+        metrics.reporter.prometheus.port: 9249
+        metrics.reporter.prometheus.host: 0.0.0.0
+        metrics.reporter.jmx.class: org.apache.flink.metrics.jmx.JMXReporter
+        metrics.reporter.jmx.port: 8789
+        metrics.scope.jm: flink.jobmanager
+        metrics.scope.jm.job: flink.jobmanager.job
+        metrics.scope.tm: flink.taskmanager
+        metrics.scope.tm.job: flink.taskmanager.job
+        metrics.scope.task: flink.task
+        metrics.scope.operator: flink.operator
+        metrics.latency.interval: 5000
+        metrics.system-resource: true
+        pipeline.operator-chaining: false
+        pipeline.auto-watermark-interval: 1000
+        pipeline.max-parallelism: 4
+        state.backend: filesystem
+        state.checkpoints.dir: file:///tmp/flink-checkpoints
+        execution.checkpointing.interval: 10s
+        execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
+      - JDK_JAVA_OPTIONS=--add-opens=java.base/java.lang=ALL-UNNAMED
+    volumes:
+      - ./target:/opt/flink/usrlib
+    networks:
+      - flink-network
+
+  flink-taskmanager:
+    build:
+      context: .
+      dockerfile: Dockerfile.flink
+    container_name: flink-taskmanager
+    hostname: flink-taskmanager
+    depends_on:
+      - flink-jobmanager
+    command: taskmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        taskmanager.memory.process.size=4096m
+        taskmanager.numberOfTaskSlots=4
+        metrics.reporters: prometheus,jmx
+        metrics.reporter.prometheus.class: org.apache.flink.metrics.prometheus.PrometheusReporter
+        metrics.reporter.prometheus.port: 9250
+        metrics.reporter.prometheus.host: 0.0.0.0
+        metrics.reporter.jmx.class: org.apache.flink.metrics.jmx.JMXReporter
+        metrics.reporter.jmx.port: 8790
+        metrics.scope.jm: flink.jobmanager
+        metrics.scope.jm.job: flink.jobmanager.job
+        metrics.scope.tm: flink.taskmanager
+        metrics.scope.tm.job: flink.taskmanager.job
+        metrics.scope.task: flink.task
+        metrics.scope.operator: flink.operator
+        metrics.latency.interval: 5000
+        metrics.system-resource: true
+        taskmanager.network.detailed-metrics: true
+        taskmanager.network.memory.buffers-per-channel: 32
+        taskmanager.network.memory.floating-buffers-per-gate: 256
+        taskmanager.memory.network.fraction: 0.2
+        taskmanager.memory.network.min: 256mb
+        taskmanager.memory.network.max: 1gb
+      - JDK_JAVA_OPTIONS=--add-opens=java.base/java.lang=ALL-UNNAMED
+    ports:
+      - "9250:9250"  # Prometheus metrics
+      - "8790:8790"  # JMX metrics
+    volumes:
+      - ./target:/opt/flink/usrlib
+    networks:
+      - flink-network
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - flink-network
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      - zookeeper
+    networks:
+      - flink-network
+    healthcheck:
+      test: ["CMD-SHELL", "/usr/bin/../bin/kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.13
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+      - cluster.name=docker-cluster
+      - network.host=0.0.0.0
+      - network.publish_host=elasticsearch
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - flink-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200 >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  flink-network:
+    driver: bridge
+
+volumes:
+  es_data:
+    driver: local

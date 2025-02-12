@@ -1,0 +1,32 @@
+jobmanager.rpc.address: flink-jobmanager
+jobmanager.rpc.port: 6123
+jobmanager.bind-host: 0.0.0.0
+taskmanager.bind-host: 0.0.0.0
+taskmanager.host: 0.0.0.0
+rest.bind-address: 0.0.0.0
+rest.bind-port: 8081
+taskmanager.memory.process.size: 4096m
+taskmanager.numberOfTaskSlots: 4
+
+# Metrics Reporter Configuration
+metrics.reporter.prometheus.class: org.apache.flink.metrics.prometheus.PrometheusReporter
+metrics.reporter.prometheus.port: 9249
+metrics.reporters: prometheus
+metrics.reporter.prometheus.interval: 5 SECONDS
+
+# Enable JMX metrics
+metrics.reporter.jmx.class: org.apache.flink.metrics.jmx.JMXReporter
+metrics.reporter.jmx.port: 8789
+metrics.reporters: jmx,prometheus
+
+# System scope metrics
+metrics.scope.jm: flink.jobmanager
+metrics.scope.jm.job: flink.jobmanager.job
+metrics.scope.tm: flink.taskmanager
+metrics.scope.tm.job: flink.taskmanager.job
+metrics.scope.task: flink.task
+metrics.scope.operator: flink.operator
+
+# System metrics
+metrics.system-resource: true
+metrics.latency.interval: 5000
